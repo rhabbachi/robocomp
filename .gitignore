@@ -1,0 +1,8 @@
+.DS_Store
+vendor/
+volumes/
+backups/
+.docker-sync
+_local.compose
+config/
+app.yml

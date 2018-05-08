@@ -1,0 +1,27 @@
+{
+    "name": "opendatastack/elasticsearch-import-api-starter",
+    "description": "a starter project for testing elasticsearch import api with elk",
+    "type": "project",
+    "require-dev": {
+        "consolidation/robo": "^1.1",
+        "phpunit/phpunit": "6.4.*"
+    },
+    "authors": [
+        {
+            "name": "Achraf Noomane",
+            "email": "noomane.achraf@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "OpenDataStack\\Tests\\": "src/elasticsearch-import-api-client/src/tests/OpenDataStack/Client"
+        },
+        "exclude-from-classmap": [
+            "/tests/"
+        ]
+    },
+    "require": {
+        "guzzlehttp/guzzle": "~6.0",
+        "symfony/yaml": "~3.0"
+    }
+}

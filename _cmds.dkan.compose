@@ -1,0 +1,759 @@
+---
+version: '3.4'
+
+x-job-base: &job-base
+  restart: 'no'
+  labels:
+    - io.rancher.container.start_once=true
+    - io.opendatastack.type="job"
+
+x-job-aws-common: &job-aws-common
+  image: xueshanf/awscli
+  command:
+    - sh
+    - -c
+    - |
+        aws s3 cp $${ARG_SOURCE} $${ARG_DEST}
+  labels:
+    - io.opendatastack.args.source.description="Source file (from Local filesystem)."
+    - io.opendatastack.args.destination.description="Destination file to be sent to S3."
+
+x-job-git-common: &job-git-common
+  image: indiehosters/git
+  entrypoint:
+    - bash
+    - -c
+  command:
+    - |
+        git clone https://$${GITHUB_USER}:$${GITHUB_AUTH_TOKEN}@$${GITHUB_REPO} $${DIST_DIR}
+  labels:
+    - io.opendatastack.args.source.description="Source file (from Local filesystem)."
+    - io.opendatastack.args.destination.description="Destination file to be sent to S3."
+
+x-job-dkan-db-common: &job-dkan-db-common
+  user: 100:101
+  volumes:
+    - dkan-asset-db-snapshots-vlm:/tmp/dkan-asset-db-snapshots-vlm:z
+
+x-job-dkan-files-common: &job-dkan-files-common
+  user: 82:82
+  volumes:
+    - dkan-asset-files-snapshots-vlm:/tmp/dkan-asset-files-snapshots-vlm:z
+    - dkan-asset-files-vlm:/tmp/dkan-asset-files-vlm:z
+
+x-dkan-assets-common: &dkan-assets-common
+  volumes:
+    - dkan-asset-files-vlm:/var/www/dkan-asset-files-vlm:z
+    - dkan-asset-code-vlm:/var/www/html:z
+
+x-job-dkan-php: &job-dkan-php
+
+services:
+
+  dkan-asset-code-clone:
+    <<: *job-base
+    <<: *job-git-common
+    env_file:
+      - ./config/env_files/github.env
+    user: 82:82
+    environment:
+      - DIST_DIR=/tmp/data
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+    labels:
+      - io.opendatastack.stage="build"
+
+  dkan-asset-code-pull:
+    <<: *job-base
+    <<: *job-git-common
+    working_dir: /tmp/data
+    env_file:
+      - ./config/env_files/github.env
+    user: 82:82
+    environment:
+      - DIST_DIR=/tmp/data
+    command:
+      - |
+          git pull
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-asset-dbsnapshot-download:
+    <<: *job-base
+    <<: *job-aws-common
+    <<: *job-dkan-db-common
+    env_file:
+      - ./config/env_files/aws.env
+    environment:
+      ARG_SOURCE: s3://dkan-amva/dkan-amva.prod.sql.gz
+      ARG_DEST: /tmp/dkan-asset-db-snapshots-vlm/dkan-amva.prod.sql.gz
+    labels:
+      - io.opendatastack.stage="build"
+
+  dkan-asset-dbsnapshot-upload:
+    <<: *job-base
+    <<: *job-aws-common
+    <<: *job-dkan-db-common
+    env_file:
+      - ./config/env_files/aws.env
+    environment:
+      ARG_SOURCE: /tmp/data/dkan/dbsnapshots/dkan-amva.local.sql.gz
+      ARG_DEST: s3://dkan-amva/
+    labels:
+      - io.opendatastack.stage="backup"
+
+  dkan-asset-dbsnapshot-import:
+    <<: *job-base
+    <<: *job-dkan-db-common
+    env_file:
+      - ./config/env_files/dkan-db.env
+    image: wodby/mariadb:10.2-3.0.1
+    user: 100:101
+    command:
+      - sh
+      - -c
+      - |
+          zcat $${ARG_SOURCE_DBSNAPSHOT} | /usr/bin/mysql -hdkan-mariadb -uroot --password=$${MYSQL_ROOT_PASSWORD} $${MYSQL_DATABASE}
+    environment:
+      ARG_SOURCE_DBSNAPSHOT: /tmp/dkan-asset-db-snapshots-vlm/dkan-amva.prod.sql.gz
+    depends_on:
+      - dkan-mariadb
+    labels:
+      - io.opendatastack.stage="setup"
+
+  dkan-asset-files-download:
+    <<: *job-base
+    <<: *job-aws-common
+    <<: *job-dkan-files-common
+    env_file:
+      - ./config/env_files/aws.env
+    environment:
+      ARG_SOURCE: s3://dkan-amva/dkan-amva.prod.files.tar.gz
+      ARG_DEST: /tmp/dkan-asset-files-snapshots-vlm
+    labels:
+      - io.opendatastack.stage="build"
+
+  dkan-asset-files-archive:
+    <<: *job-base
+    <<: *job-dkan-files-common
+    image: hellyna/tar:latest
+    entrypoint:
+      - sh
+      - -c
+    command:
+      - |
+          tar -cvz -f $${ARG_DEST_TAR} --xform="s,tmp/dkan-asset-files-vlm,," $${ARG_SOURCE_DIR}
+    environment:
+      ARG_SOURCE_DIR: /tmp/dkan-asset-files-vlm/
+      ARG_DEST_TAR: /tmp/dkan-asset-files-snapshots-vlm/dkan-amva.prod.files.tar.gz
+    labels:
+      - io.opendatastack.stage="backup"
+
+  dkan-asset-files-unpack:
+    <<: *job-base
+    <<: *job-dkan-files-common
+    image: hellyna/tar:latest
+    user: 82:82
+    entrypoint:
+      - sh
+      - -c
+    command:
+      - |
+          tar xvzf $${ARG_SOURCE_TAR} --strip 2 -C $${ARG_DEST}
+    environment:
+      ARG_SOURCE_TAR: /tmp/dkan-asset-files-snapshots-vlm/dkan-amva.prod.files.tar.gz
+      ARG_DEST: /tmp/dkan-asset-files-vlm/
+    labels:
+      - io.opendatastack.stage="setup"
+
+  dkan-build-config-circleci:
+    <<: *job-base
+    image: ruby
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - ruby
+      - -e
+    command:
+      - |
+          require 'erb'
+          require 'yaml'
+
+          template = File.open("assets/templates/circle.yml.erb", "r").read
+
+          class CircleCIConfig
+            attr_accessor :temp_dirs
+            attr_accessor :memory_limit
+
+            def initialize config
+              default_test_dirs = ["tests/features", "dkan/test/features", "config/tests/features"]
+
+              if !config["circle"] || !config["circle"]["test_dirs"]
+                @test_dirs = default_test_dirs
+              else
+                @test_dirs = config["circle"]["test_dirs"]
+              end
+
+              if !config["circle"] || !config["circle"]["memory_limit"]
+                @memory_limit = "256M"
+              else
+                @memory_limit = config["circle"]["memory_limit"]
+              end
+
+              default_skip_tags = [ "customizable", "fixme", "testBug"]
+              if !config["circle"] || !config["circle"]["skip_tags"]
+                @skip_tags = process_skip_tags(default_skip_tags)
+              else
+                @skip_tags = process_skip_tags(config["circle"]["skip_tags"])
+              end
+            end
+
+            def render(template)
+              ERB.new(template).result(binding)
+            end
+
+            private
+
+            def process_skip_tags(tags)
+              tags.map {|w| "~@#{w}" }
+            end
+          end
+
+          config = YAML.load_file("config/config.yml")
+          circle_ci_config = CircleCIConfig.new(config)
+          File.write('circle.yml', circle_ci_config.render(template))
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-config-htaccess:
+    <<: *job-base
+    image: ruby
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - ruby
+      - -e
+    command:
+      - |
+          require 'erb'
+          require 'yaml'
+
+          htaccess_template = File.open("assets/templates/.htaccess.erb", "r").read
+
+          class Htaccess
+            attr_accessor :https_everywhere
+            attr_accessor :redirect_hosts
+            attr_accessor :prod_host
+
+            def initialize config
+              @redirect_hosts = set_redirect_hosts(config)
+              @https_everywhere = config["default"]["https_everywhere"] ? config["default"]["https_everywhere"] : false
+              @prod_host = config["default"]["hostname"]
+            end
+
+            def render(template)
+              ERB.new(template).result(binding)
+            end
+
+            private
+            def set_redirect_hosts config
+              if config["redirectDomains"]
+                config["redirectDomains"].map do |m| m.gsub(".", "\."); end
+              else
+                []
+              end
+            end
+
+          end
+
+          config = YAML.load_file("config/config.yml")
+          htaccess = Htaccess.new(config)
+          File.write('config/.htaccess', htaccess.render(htaccess_template))
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-config-config:
+    <<: *job-base
+    image: ruby
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - ruby
+      - -e
+    command:
+      - |
+          require 'yaml'
+
+          unless [].respond_to? :to_h
+            class Array
+              def to_h
+                Hash[self]
+              end
+            end
+          end
+
+          def sort_merge config, config_example
+            if config.nil?
+              return config_example
+            end
+
+            if config_example == {} and config == {}
+              return {}
+            end
+
+            if config_example == {}
+              return sort_merge(config_example, config)
+            end
+
+            if config.instance_of? Hash and config_example.instance_of? Hash
+              config_example = config_example.map { |k,v|
+                if v.instance_of? Hash and config[k].nil?
+                  [k, v.sort.to_h]
+                else
+                  [k, sort_merge(config[k], v)]
+                end
+              }.to_h
+            else
+              if config.instance_of? Array
+                return config.sort
+              else
+                return config
+              end
+            end
+
+            return config_example.sort.to_h
+          end
+
+          def main
+            config_path = File.dirname(__FILE__) + "/../../../config/config.yml"
+            puts config_path
+            config_example_path = File.dirname(__FILE__) + "/../../../config/example.config.yml"
+
+            if File.readable? config_path
+              config = YAML::load(File::read(config_path))
+            else
+              config = {}
+            end
+
+            if File.readable? config_example_path
+              config_example = YAML::load(File::read(config_example_path))
+            else
+              config_example = {}
+            end
+
+            if File.writable? config_path
+              File.open(config_path, "w") do |file|
+                file.write(YAML::dump(sort_merge(config, config_example)))
+                file.close
+              end
+
+            end
+          end
+
+          if ENV["PROCESS_CONFIG"]
+            main
+          end
+    environment:
+      PROCESS_CONFIG: "true"
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-config-transpose:
+    <<: *job-base
+    image: composer
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - sh
+      - -c
+    command:
+      - |
+          cd .ahoy/site
+          composer install
+          cd -
+          php .ahoy/site/.scripts/config.php
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-update-dkan-starter:
+    <<: *dkan-assets-common
+    image: wodby/drupal-php:5.6-3.3.1
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          # It takes time to grab the entire repo. Checking out to git ignored hidden folder.
+          if [ ! -d .dkan_starter ]; then
+            git clone 'https://github.com/GetDKAN/dkan_starter.git' .dkan_starter --depth=1
+          fi
+          cd .dkan_starter
+          git checkout master --force
+          git reset --hard origin/master
+          if [[ -z "$${ARG_TAG}" ]]; then
+            echo "Please provide a Data Starter release (tag) as an argument. Exiting"
+            exit 0
+          fi
+          git fetch origin "$${ARG_TAG}:$${ARG_TAG}" 2> /dev/null
+          ARGS=`git rev-parse --verify "$${ARG_TAG}" 2> /dev/null`
+          echo $${ARGS}
+          if [[ -z "$${ARGS}" ]]; then
+            echo "You need to specify a valid Data Starter release (tag) or branch. Exiting"
+            exit 0
+          fi
+          git checkout $${ARGS}
+          cd ..
+          mv config .config
+          rm -rf * .ahoy .ahoy.yml .github .probo.public.yml .probo.yml
+          # You can rsync now
+          rsync -av --exclude=.git --exclude=.dkan_starter .dkan_starter/ ./
+          cp config/config.yml .config/example.config.yml
+          rm -rf config
+          mv .config config
+          rm -rf .dkan_starter
+    environment:
+      ARG_TAG: "1.14.5.1"
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-custom:
+    <<: *job-base
+    image: wodby/drupal-php:5.6-3.3.1
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          if [ -f config/custom.make ] && [ `cat config/custom.make | sed "/^\s*$$/d" | wc -l` -gt 2 ]; then
+            drush -y make --no-core --contrib-destination=contrib config/custom.make --no-recursion --no-cache --verbose
+
+            # Remove old stuff first
+            dirs=( $$(find ./contrib/modules -maxdepth 1 -type d | sed "s/\.\/contrib\/modules\///g") )
+            for dir in "$${dirs[@]}";
+            do
+              rm -fR ./docroot/sites/all/modules/contrib/$$dir
+            done
+
+            mv -f contrib/modules/* docroot/sites/all/modules/contrib
+            rm -rf contrib
+          fi
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-custom-libs:
+    <<: *job-base
+    image: wodby/drupal-php:5.6-3.3.1
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          if [ ! -d docroot/sites/all/libraries ]; then
+             echo 'Creating docroot/sites/all/libraries'
+             mkdir docroot/sites/all/libraries
+          fi
+
+          # Make writable so that error not thrown on second attempt.
+          mkdir -p contrib/libraries && chmod 777 contrib/libraries
+
+          if [ -f config/custom_libs.make ] && [ `cat config/custom_libs.make | sed "/^\s*$$/d" | wc -l` -gt 2 ]; then
+            drush -y make --no-core --contrib-destination=contrib config/custom_libs.make --no-recursion --no-cache --verbose
+
+            # Remove old stuff first
+            dirs=( $$(find ./contrib/libraries -type d  -maxdepth 1 | sed "s/\.\/contrib\/libraries\///g") )
+            for dir in "$${dirs[@]}";
+            do
+              # Skip root folder
+              if [ "$$dir" == "./contrib/libraries" ]; then
+                continue;
+              fi
+              echo "Replace ./docroot/sites/all/libraries/$$dir"
+              rm -fR ./docroot/sites/all/libraries/$$dir
+              mv contrib/libraries/$$dir docroot/sites/all/libraries/
+            done
+
+            rm -fR contrib
+
+          fi
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-post-build:
+    <<: *job-base
+    image: wodby/drupal-php:5.6-3.3.1
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          # Setup a folder for contrib modules and themes.
+          mkdir -p docroot/sites/all/modules/contrib
+          mkdir -p docroot/sites/all/themes/contrib
+          # Replace the default .htaccess file with our own that includes a working non-www to www example for acquia.
+          if [ -f config/.htaccess ]; then
+            rm -rf docroot/.htaccess
+            ln -s ../config/.htaccess docroot/.htaccess
+          fi
+          # Replace sites/default with our own sites/default outside of the drupal root.
+          rm -rf docroot/sites/default;
+          ln -s ../../assets/sites/default docroot/sites/default
+          # Add .htaccess to the files directory if it does not exist.
+          if [ ! -f docroot/sites/default/files/.htaccess ]; then
+            ln -s ../../config/files/.htaccess docroot/sites/default/files/.htaccess
+          fi
+          # Clean out any .gitignore files imported from other modules, libraries, and profiles.
+          find dkan -type f -name .gitignore -exec rm -rf {} \;
+          find dkan -type d -name .git -exec rm -rf {} \;
+          find docroot/sites/all -type f -name .gitignore -exec rm -rf {} \;
+          find docroot/sites/all -type d -name .git -exec rm -rf {} \;
+          # Setup custom modules folder outside of the drupal root.
+          rm -rf docroot/sites/all/modules/custom
+          rm -rf docroot/sites/all/themes/custom
+          rm -rf docroot/sites/all/modules/data_config
+          ln -s ../../../../assets/modules/data_config docroot/sites/all/modules/data_config
+          ln -s ../../../../config/modules/custom docroot/sites/all/modules/custom
+          ln -s ../../../../config/themes/custom docroot/sites/all/themes/custom
+          # Remove README/INSTALL files for security reasons CIVIC-3122
+          find ./docroot -type f -name "README*" -exec rm -f {} \;
+          find ./docroot -type f -name "INSTALL*" -exec rm -f {} \;
+          find ./docroot -type f -name "CHANGELOG*" -exec rm -rf {} \;
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-post-build-custom:
+    <<: *job-base
+    image: wodby/drupal-php:5.6-3.3.1
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          echo "Link module translations from config/translations"
+          rm -rf docroot/sites/all/translations
+          ln -sv ../../../config/translations docroot/sites/all/translations
+
+          echo "Link composer_manager composer/ and vendor/ directories from config/"
+          rm -rf docroot/sites/all/vendor
+          ln -sv ../../../config/vendor docroot/sites/all/vendor
+          rm -rf docroot/sites/all/composer
+          ln -sv ../../../config/composer docroot/sites/all/composer
+
+          echo "Global test directory should have an assets sub-folder"
+          mkdir -p tests/assets
+          echo "*" > tests/assets/.gitignore
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-build-overrides:
+    <<: *job-base
+    image: wodby/drupal-php:5.6-3.3.1
+    user: 82:82
+    working_dir: /tmp/data
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          if [ -f config/overrides.make ]; then
+            cd .ahoy/site && composer install && cd -
+            drush php-script .ahoy/site/.scripts/overrides.php
+            # Check file exits and file not empty.
+            if [ -e overriden_make.make ] && [ -s overriden_make.make ]; then
+              rm -rf docroot/sites/all/modules/overrides
+              mkdir -p docroot/sites/all/modules/overrides
+              drush -y make --no-core --contrib-destination=overrides overriden_make.make --no-recursion --no-cache --verbose
+              mv overrides/modules/* docroot/sites/all/modules/overrides
+              rm -rf overrides
+            fi
+            rm -f overriden_make.make
+          fi
+    volumes:
+      - dkan-asset-code-vlm:/tmp/data:z
+
+  dkan-deploy:
+    # extends: dkan-php
+    <<: *dkan-assets-common
+    image: wodby/drupal-php:5.6-3.3.1
+    env_file:
+      - ./config/env_files/dkan-php.env
+      - ./config/env_files/dkan-db.env
+    working_dir: /var/www/html/docroot
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          /docker-entrypoint.sh
+          [[ -f "sites/default/settings.docker.php" ]] || cp -rv sites/default/settings.docker.demo.php sites/default/settings.docker.php
+          cd sites/default && rm -rf files; ln -sf ../../../../dkan-asset-files-vlm files
+          drush rr --no-cache-clear
+          drush sqlq "TRUNCATE cache;"
+          drush cc all
+
+          drush en custom_config -y
+          drush cc all
+          drush -y fr --force custom_config
+          drush env-switch $$DKAN_ENV_SWITCH --force
+          drush -y updb
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      PHP_FPM_CLEAR_ENV: "no"
+      # PHP_XDEBUG: 1
+      # PHP_XDEBUG_DEFAULT_ENABLE: 1
+      # PHP_XDEBUG_REMOTE_CONNECT_BACK: 0
+      # PHP_XDEBUG_REMOTE_HOST: "10.254.254.254"
+      # PHP_XDEBUG_PROFILER_OUTPUT_DIR: /mnt/files/xdebug/profiler
+      # PHP_XDEBUG_TRACE_OUTPUT_DIR: /mnt/files/xdebug/traces
+      # PHP_BLACKFIRE: 1
+    depends_on:
+      - dkan-mariadb
+
+  dkan-install:
+    # extends: dkan-php
+    <<: *dkan-assets-common
+    image: wodby/drupal-php:5.6-3.3.1
+    env_file:
+      - ./config/env_files/dkan-php.env
+      - ./config/env_files/dkan-db.env
+    working_dir: /var/www/html/docroot
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          /docker-entrypoint.sh
+          [[ -f "sites/default/settings.docker.php" ]] || cp -rv sites/default/settings.docker.demo.php sites/default/settings.docker.php
+          drush si dkan --verbose --account-pass=\'admin\' --site-name=\'DKAN\' install_configure_form.update_status_module="array(FALSE,FALSE)" --yes
+          # drush  -y en custom_config
+          # drush fr -y  --force custom_config
+          # drush cc all
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      PHP_FPM_CLEAR_ENV: "no"
+    depends_on:
+      - dkan-mariadb
+
+  dkan-theme-new-from-kit:
+    # extends: dkan-php
+    <<: *dkan-assets-common
+    image: wodby/drupal-php:5.6-3.3.1
+    env_file:
+      - ./config/env_files/dkan-php.env
+      - ./config/env_files/dkan-db.env
+    working_dir: /var/www/html/docroot
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          set -x
+          /docker-entrypoint.sh
+
+          if [[ -z "$$ARG_THEME_NAME" ]]; then
+              echo "Please specify the name of the theme you want to create."
+              exit 1
+          fi
+
+          THEME_DIR="docroot/sites/all/themes/$$ARG_THEME_NAME"
+          if [[ -d "$$THEME_DIR" ]]; then
+            echo "Theme $$ARG_THEME_NAME found at $$THEME_DIR. Please remove it first"
+            exit 1;
+          else
+            echo "Creating theme $$ARG_THEME_NAME at $$THEME_DIR"
+          fi
+
+          ORIGINAL_THEME=`drush vget theme_default --format=string`
+          drush pm-enable radix -y
+          drush vset theme_default radix
+          drush cc drush
+
+          KIT_URL="https://github.com/GetDKAN/radix-kit-nuboot/archive/master.zip"
+          if wget -q "$$KIT_URL"; then
+            unzip master.zip
+            rm -rf master.zip
+            rm -rf profiles/dkan/themes/contrib/radix/kits/nuboot
+            mv radix-kit-nuboot-master profiles/dkan/themes/contrib/radix/kits/nuboot
+            drush radix $$ARG_THEME_NAME --kit='nuboot'
+            drush en $$ARG_THEME_NAME -y
+            drush vset theme_default $$ARG_THEME_NAME -y
+            drush pm-disable $$ORIGINAL_THEME -y
+            drush pm-disable radix -y
+          else
+            echo "Can't seem to download kit from $$KIT_URL, restoring original theme"
+            drush vset theme_default $$ORIGINAL_THEME
+            exit 1;
+          fi
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      PHP_FPM_CLEAR_ENV: "no"
+      ARG_THEME_NAME: amva
+    depends_on:
+      - dkan-mariadb
+    labels:
+      - io.opendatastack.description="creates a new theme based on nuboot-radix"
+      - io.opendatastack.args.theme_name.description="Theme name to create."
+
+  dkan-theme-watch:
+    # Extend node image for the theme tools.
+    <<: *dkan-assets-common
+    image: wodby/node:9.11
+    env_file:
+      - ./config/env_files/dkan-php.env
+      - ./config/env_files/dkan-db.env
+    working_dir: /var/www/html/docroot
+    user: root
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          set -x
+
+          # Install Dependencies
+          command -v bower >/dev/null 2>&1 || {
+            echo >&2 "Bower not installed.";
+            npm install -g bower;
+          }
+          command -v gulp >/dev/null 2>&1 || {
+            echo >&2 "Gulp not installed.";
+            npm install -g gulp-cli;
+          }
+
+          apk --no-cache add shadow python g++
+          groupmod -g 82 node && usermod -u 82 -g 82 node
+          /docker-entrypoint.sh
+
+          sudo -u node bash << EOF
+          cd $$ARG_THEME_PATH
+
+          npm install --unsafe-perm && node_modules/bin/bower install -allow-root
+          gulp
+          EOF
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      PHP_FPM_CLEAR_ENV: "no"
+      ARG_THEME_PATH: "sites/all/themes/amva"
+    labels:
+      - io.opendatastack.job.description="Installs dependencies for theme development."
+      - io.opendatastack.args.theme_path.description="Path to the Dkan theme to watch (relative to docroot)."
+
+  drush:
+    # extends: dkan-php
+    <<: *dkan-assets-common
+    image: wodby/drupal-php:5.6-3.3.1
+    env_file:
+      - ./config/env_files/dkan-php.env
+      - ./config/env_files/dkan-db.env
+    working_dir: /var/www/html/docroot
+    entrypoint:
+      - drush

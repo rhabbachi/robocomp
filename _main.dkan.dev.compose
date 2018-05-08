@@ -1,0 +1,41 @@
+---
+version: '3.4'
+
+services:
+
+  dkan-php:
+    environment:
+      ENVIRONMENT: development
+      DKAN_ENV_SWITCH: development
+
+volumes:
+
+  dkan-asset-db-vlm:
+    driver: lebokus/bindfs:latest
+    driver_opts:
+      sourcePath: "${PWD}/volumes/dkan-asset-db-vlm"
+      map: "1000/100:@1000/@101"
+
+  dkan-asset-db-snapshots-vlm:
+    driver: lebokus/bindfs:latest
+    driver_opts:
+      sourcePath: "${PWD}/volumes/dkan-asset-db-snapshots-vlm"
+      map: "1000/100:@1000/@101"
+
+  dkan-asset-code-vlm:
+    driver: lebokus/bindfs:latest
+    driver_opts:
+      sourcePath: "${PWD}/volumes/dkan-asset-code-vlm"
+      map: "1000/82:@1000/@82"
+
+  dkan-asset-files-snapshots-vlm:
+    driver: lebokus/bindfs:latest
+    driver_opts:
+      sourcePath: "${PWD}/volumes/dkan-asset-files-snapshots-vlm"
+      map: "1000/82:@1000/@82"
+
+  dkan-asset-files-vlm:
+    driver: lebokus/bindfs:latest
+    driver_opts:
+      sourcePath: "${PWD}/volumes/dkan-asset-files-vlm"
+      map: "1000/82:@1000/@82"

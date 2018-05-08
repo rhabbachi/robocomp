@@ -1,0 +1,27 @@
+---
+version: '3.4'
+
+services:
+
+  traefik:
+    image: traefik
+    command: -c /dev/null --web --docker --logLevel=INFO
+    ports:
+      - '80:80'
+      # - '8080:8080' # Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  portainer:
+    image: portainer/portainer
+    # command: --templates http://templates/templates.json
+    command: --host=unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # - /opt/portainer/data:/data
+
+  crontab:
+    image: willfarrell/crontab
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "./config/crontab/:/opt/crontab/:rw"
