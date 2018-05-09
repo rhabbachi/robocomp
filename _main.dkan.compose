@@ -32,7 +32,6 @@ services:
       - ./config/env_files/dkan-php.env
       - ./config/env_files/dkan-db.env
     environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
       PHP_FPM_CLEAR_ENV: "no"
       # PHP_XDEBUG: 1
       # PHP_XDEBUG_DEFAULT_ENABLE: 1

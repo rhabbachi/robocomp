@@ -24,4 +24,4 @@ services:
     image: willfarrell/crontab
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - "./config/crontab/:/opt/crontab/:rw"
+      - ./config/crontab/config.json:/opt/crontab/config.json:ro

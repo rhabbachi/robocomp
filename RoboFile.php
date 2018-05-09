@@ -58,20 +58,15 @@ class RoboFile extends \Robo\Tasks
         $composefiles = array();
 
         $config = $this->_getConfiguration();
-        $modes = $config['modes'];
 
-        if (!empty($modes)) {
-            $glob_modes = implode('|', $modes);
-        } else {
-            $glob_modes = $modes;
-        }
+        $glob_mode = !empty($config['mode']) ? $config['mode'] : "";
 
-        $glob_os = strtolower(PHP_OS);
+        $glob_os = '_' . strtolower(PHP_OS);
 
         $composefiles = glob("*.compose");
-        $composefiles = preg_grep("/({$glob_order})(\.\w+)?\.?({$glob_modes})?\.?({$glob_os})?.compose/", $composefiles);
+        $composefiles = preg_grep("/({$glob_order})(\.[^\W_]+)?\.?({$glob_mode})?\.?({$glob_os})?.compose/", $composefiles);
 
-        usort($composefiles, function($a, $b) use ($agregation_order) {
+        usort($composefiles, function($a, $b) use ($agregation_order, $glob_mode, $glob_os) {
             $a = str_replace('.compose', '', $a);
             $b = str_replace('.compose', '', $b);
 
@@ -86,8 +81,20 @@ class RoboFile extends \Robo\Tasks
                 if (count($a) == count($b)) {
                     // a and b have the same override level. One of them must
                     // be OS specific.
-                    return end($a) == PHP_OS ? 1 : -1;
+
+                    if ((array_search($glob_os, $a) !== FALSE && array_search($glob_os, $b) === FALSE)
+                    || (array_search($glob_mode, $a) !== FALSE && array_search($glob_mode, $b) === FALSE)) {
+                        return 1;
+                    }
+                    elseif ((array_search($glob_os, $b) !== FALSE && array_search($glob_os, $a) === FALSE)
+                    || (array_search($glob_mode, $b) !== FALSE && array_search($glob_mode, $a) === FALSE)) {
+                        return -1;
+                    }
+
+                    // same override level but no OS nor mode. Equals.
+                    return 0;
                 }
+
                 // a and b are on a differrent override level. One of them must
                 return count($a) > count($b) ? 1 : -1;
             }
@@ -196,12 +203,45 @@ class RoboFile extends \Robo\Tasks
         // Generate crontab file.
         $this->io()->section("Generate crontab file.");
 
+        // Make sure the env directory is available.
+        $this->_mkdir(self::$APP_CRON_DIR_PATH);
+
+        if (empty($config['crontab'])) {
+            $this->io()->say("No crontab entry to generate.");
+        }
+        else {
+            $crontabYaml = $config['crontab'];
+            // Generated cron entries needs to be an array. Use array_values().
+            file_put_contents(self::$APP_CRON_DIR_PATH . "/config.json", json_encode(array_values($crontabYaml)));
+        }
+
         // Generate _local.cpmopose file
         $this->io()->section("Generate _local.compose file.");
         $localYaml = $config['_local'];
         $localYaml = array_merge(array("version" => "3.4"), $localYaml);
         $localYaml = Yaml::dump($localYaml, 10, 2);
         file_put_contents(self::$APP_LOCAL_FILE_PATH, $localYaml);
+    }
+
+    /**
+     * Run docker compose commands from configuration array.
+     */
+    public function _cmdRun(array $cmds_array) {
+        foreach ($cmds_array as $cmd => $cmd_options) {
+            $docker_command = array(
+                "run", "--rm",
+            );
+
+            $cmd_args = array();
+
+            if (!empty($cmd_options['args'])) {
+                $cmd_args = array_map(function ($arg) {
+                    return '-e ' . $arg;
+                }, $cmd_options['args']);
+            }
+
+            $this->cmd(array_merge($docker_command, $cmd_args, array($cmd)));
+        }
     }
 
     /**
@@ -217,10 +257,7 @@ class RoboFile extends \Robo\Tasks
     public function appBuild() {
         $config = $this->_getConfiguration();
         $build_cmds = $config['build'];
-
-        foreach ($build_cmds as $cmd) {
-            $this->cmd(array("run", "--rm", $cmd));
-        }
+        $this->_cmdRun($build_cmds);
     }
 
     /**
@@ -237,10 +274,7 @@ class RoboFile extends \Robo\Tasks
 
         $config = $this->_getConfiguration();
         $setup_cmds = $config['setup'];
-
-        foreach ($setup_cmds as $cmd) {
-            $this->cmd(array("run", "--rm", $cmd));
-        }
+        $this->_cmdRun($setup_cmds);
     }
 
     /**
@@ -416,21 +450,5 @@ class RoboFile extends \Robo\Tasks
     public function dkanAssetsFilesUnpack()
     {
         $this->cmd(array("run", "dkan-asset-files-unpack"));
-    }
-
-    /**
-     * Extrat an archive from current Dkan files.
-     */
-    public function dkanBuild()
-    {
-        $this->cmd(array("run", "dkan-build-custom"));
-        $this->cmd(array("run", "dkan-build-custom-libs"));
-        $this->cmd(array("run", "dkan-build-overrides"));
-        $this->cmd(array("run", "dkan-build-config-htaccess"));
-        $this->cmd(array("run", "dkan-build-config-circleci"));
-        $this->cmd(array("run", "dkan-build-config-config"));
-        $this->cmd(array("run", "dkan-build-config-transpose"));
-        $this->cmd(array("run", "dkan-build-post-build"));
-        $this->cmd(array("run", "dkan-build-post-build-custom"));
     }
 }

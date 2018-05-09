@@ -13,10 +13,12 @@ x-job-aws-common: &job-aws-common
     - sh
     - -c
     - |
-        aws s3 cp $${ARG_SOURCE} $${ARG_DEST}
+        aws s3 cp $${ARG_SOURCE} $${ARG_DESTINATION}
   labels:
     - io.opendatastack.args.source.description="Source file (from Local filesystem)."
+    - io.opendatastack.args.source.required=true
     - io.opendatastack.args.destination.description="Destination file to be sent to S3."
+    - io.opendatastack.args.destination.required=true
 
 x-job-git-common: &job-git-common
   image: indiehosters/git
@@ -84,9 +86,6 @@ services:
     <<: *job-dkan-db-common
     env_file:
       - ./config/env_files/aws.env
-    environment:
-      ARG_SOURCE: s3://dkan-amva/dkan-amva.prod.sql.gz
-      ARG_DEST: /tmp/dkan-asset-db-snapshots-vlm/dkan-amva.prod.sql.gz
     labels:
       - io.opendatastack.stage="build"
 
@@ -98,7 +97,7 @@ services:
       - ./config/env_files/aws.env
     environment:
       ARG_SOURCE: /tmp/data/dkan/dbsnapshots/dkan-amva.local.sql.gz
-      ARG_DEST: s3://dkan-amva/
+      ARG_DESTINATION: s3://dkan-amva/
     labels:
       - io.opendatastack.stage="backup"
 
@@ -114,12 +113,12 @@ services:
       - -c
       - |
           zcat $${ARG_SOURCE_DBSNAPSHOT} | /usr/bin/mysql -hdkan-mariadb -uroot --password=$${MYSQL_ROOT_PASSWORD} $${MYSQL_DATABASE}
-    environment:
-      ARG_SOURCE_DBSNAPSHOT: /tmp/dkan-asset-db-snapshots-vlm/dkan-amva.prod.sql.gz
     depends_on:
       - dkan-mariadb
     labels:
       - io.opendatastack.stage="setup"
+      - io.opendatastack.args.source_dbsnapshot.description="Source sql.gz file (from Local filesystem)."
+      - io.opendatastack.args.source_dbsnapshot.required=true
 
   dkan-asset-files-download:
     <<: *job-base
@@ -128,8 +127,7 @@ services:
     env_file:
       - ./config/env_files/aws.env
     environment:
-      ARG_SOURCE: s3://dkan-amva/dkan-amva.prod.files.tar.gz
-      ARG_DEST: /tmp/dkan-asset-files-snapshots-vlm
+      ARG_DESTINATION: /tmp/dkan-asset-files-snapshots-vlm
     labels:
       - io.opendatastack.stage="build"
 
@@ -161,7 +159,6 @@ services:
       - |
           tar xvzf $${ARG_SOURCE_TAR} --strip 2 -C $${ARG_DEST}
     environment:
-      ARG_SOURCE_TAR: /tmp/dkan-asset-files-snapshots-vlm/dkan-amva.prod.files.tar.gz
       ARG_DEST: /tmp/dkan-asset-files-vlm/
     labels:
       - io.opendatastack.stage="setup"
@@ -746,6 +743,7 @@ services:
     labels:
       - io.opendatastack.job.description="Installs dependencies for theme development."
       - io.opendatastack.args.theme_path.description="Path to the Dkan theme to watch (relative to docroot)."
+      - io.opendatastack.args.theme_path.required=true
 
   drush:
     # extends: dkan-php

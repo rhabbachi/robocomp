@@ -1,10 +1,10 @@
----
 version: '3.4'
 
 services:
 
   dkan-php:
     environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
       ENVIRONMENT: development
       DKAN_ENV_SWITCH: development
 
