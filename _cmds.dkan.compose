@@ -591,8 +591,14 @@ services:
     command:
       - |
           /docker-entrypoint.sh
-          [[ -f "sites/default/settings.docker.php" ]] || cp -rv sites/default/settings.docker.demo.php sites/default/settings.docker.php
-          cd sites/default && rm -rf files; ln -sf ../../../../dkan-asset-files-vlm files
+          cd sites/default
+
+          # Setup settings.php and files link.
+          chmod u+w .
+          [[ -f "settings.docker.php" ]] || cp -rv settings.docker.demo.php settings.docker.php
+          rm -rf files; ln -sf ../../../../dkan-asset-files-vlm files
+          chmod u-w .
+
           drush rr --no-cache-clear
           drush sqlq "TRUNCATE cache;"
           drush cc all
@@ -629,7 +635,14 @@ services:
     command:
       - |
           /docker-entrypoint.sh
-          [[ -f "sites/default/settings.docker.php" ]] || cp -rv sites/default/settings.docker.demo.php sites/default/settings.docker.php
+          cd sites/default
+
+          # Setup settings.php and files link.
+          chmod u+w .
+          [[ -f "settings.docker.php" ]] || cp -rv settings.docker.demo.php settings.docker.php
+          rm -rf files; ln -sf ../../../../dkan-asset-files-vlm files
+          chmod u-w .
+
           drush si dkan --verbose --account-pass=\'admin\' --site-name=\'DKAN\' install_configure_form.update_status_module="array(FALSE,FALSE)" --yes
           # drush  -y en custom_config
           # drush fr -y  --force custom_config

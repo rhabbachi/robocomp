@@ -3,8 +3,7 @@
     "description": "a starter project for testing elasticsearch import api with elk",
     "type": "project",
     "require-dev": {
-        "consolidation/robo": "^1.1",
-        "phpunit/phpunit": "6.4.*"
+        "consolidation/robo": "^1.1"
     },
     "authors": [
         {

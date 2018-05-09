@@ -2,8 +2,7 @@
 project:
   name: medata
 
-modes:
-  - dev
+mode: _dev
 
 domains:
   - dkan.docker
@@ -11,7 +10,7 @@ domains:
 setup:
   dkan-asset-dbsnapshot-import:
     args:
-      - ARG_SOURCE_DBSNAPSHOT=/tmp/dkan-asset-db-snapshots-vlm/dkan-medellin.prod.sql.gz
+      - ARG_SOURCE_DBSNAPSHOT=
   dkan-asset-files-unpack:
     args:
       - ARG_SOURCE_TAR=/tmp/dkan-asset-files-snapshots-vlm/dkan-medellin.prod.files.tar.gz
@@ -22,33 +21,33 @@ build:
 
   dkan-asset-dbsnapshot-download:
     args:
-      - ARG_SOURCE=s3://dkan-medellin/dkan-medellin.prod.sql.gz
+      - ARG_SOURCE=
       - ARG_DESTINATION=/tmp/dkan-asset-db-snapshots-vlm/dkan-medellin.prod.sql.gz
 
   dkan-asset-files-download:
     args:
-      - ARG_SOURCE=s3://dkan-medellin/dkan-medellin.prod.files.tar.gz
+      - ARG_SOURCE=
 
 volumes:
   dkan-asset-code-vlm:
-    - user: 82
-    - group: 82
+    user: 82
+    group: 82
 
   dkan-asset-db-vlm:
-    - user: 82
-    - group: 82
+    user: 82
+    group: 82
 
   dkan-asset-db-snapshots-vlm:
-    - user: 100
-    - group: 101
+    user: 100
+    group: 101
 
   dkan-asset-files-snapshots-vlm:
-    - user: 82
-    - group: 82
+    user: 82
+    group: 82
 
   dkan-asset-files-vlm:
-    - user: 82
-    - group: 82
+    user: 82
+    group: 82
 
 env_files:
   dkan-php:
@@ -56,13 +55,13 @@ env_files:
     - DKAN_ENV_SWITCH=production
 
   aws:
-    - AWS_ACCESS_KEY_ID=AKIAJFQS7DXO2LJXQL4A
-    - AWS_SECRET_ACCESS_KEY=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
+    - AWS_ACCESS_KEY_ID=
+    - AWS_SECRET_ACCESS_KEY=
 
   github:
-    - GITHUB_USER=angrycactus-bot
-    - GITHUB_AUTH_TOKEN=60bb29031fcf9993345ff94a5788fbd458d88f39
-    - GITHUB_REPO=github.com/angrycactus/dkan-medellin.git
+    - GITHUB_USER=
+    - GITHUB_AUTH_TOKEN=
+    - GITHUB_REPO=
 
   dkan-db:
     - MYSQL_ROOT_PASSWORD=password
@@ -73,11 +72,6 @@ env_files:
     - DB_1_ENV_MYSQL_USER=dkan
     - DB_1_ENV_MYSQL_PASSWORD=dkan
     - DB_1_ENV_MYSQL_DATABASE=dkan
-
-  jwt:
-    - OPENDATASTACK_DKAN_CONSUMER_JWT_KEY=dkan_opendatastack_kibana
-    - OPENDATASTACK_DKAN_CONSUMER_JWT_SECRET=e71829c351aa4242c2719cbfbe671c09
-    - DKAN_OPENDATASTACK_KIBANA_JWT_SECRET=e71829c351aa4242c2719cbfbe671c09
 
 crontab:
   dkan-cron:
@@ -122,9 +116,6 @@ crontab:
 
 _local:
   services:
-    dkan-php:
-      environment:
-        - DKAN_OPENDATASTACK_KIBANA_SRC=http://kibana.dkan.docker/analytics
 
     dkan-nginx:
       networks:
@@ -134,12 +125,3 @@ _local:
       labels:
         - 'traefik.port=80'
         - 'traefik.frontend.rule=Host:dkan.docker'
-
-    kibana-gateway:
-      networks:
-        default:
-          aliases:
-            - kibana.dkan.docker
-      labels:
-        - 'traefik.port=8000'
-        - 'traefik.frontend.rule=Host:kibana.dkan.docker'

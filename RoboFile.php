@@ -131,7 +131,11 @@ class RoboFile extends \Robo\Tasks
         $config = $this->_getConfiguration();
 
         $this->_mkdir('volumes');
-        $configVolumes = $config['volumes'];
+
+        $configVolumes = array();
+        if (!empty($config['volumes'])) {
+            $configVolumes = $config['volumes'];
+        }
 
         // Make sure the volume local directories are available.
         foreach ($configVolumes as $volume_name => $volume_config) {
