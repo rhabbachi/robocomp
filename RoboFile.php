@@ -222,7 +222,7 @@ class RoboFile extends \Robo\Tasks
         // Generate _local.cpmopose file
         $this->io()->section("Generate _local.compose file.");
         $localYaml = $config['_local'];
-        $localYaml = array_merge(array("version" => "3.4"), $localYaml);
+        $localYaml = array_merge(array("version" => "2.4"), $localYaml);
         $localYaml = Yaml::dump($localYaml, 10, 2);
         file_put_contents(self::$APP_LOCAL_FILE_PATH, $localYaml);
     }

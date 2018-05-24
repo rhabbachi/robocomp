@@ -1,12 +1,18 @@
-version: '3.4'
+---
+version: '2.4'
 
 services:
 
-  dkan-php:
+  mailhog:
+    image: mailhog/mailhog
+    labels:
+      - 'traefik.backend=mailhog'
+      - 'traefik.port=8025'
+      - 'traefik.frontend.rule=Host:mailhog.dkan.docker'
+
+  dkan-nginx:
     environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
-      ENVIRONMENT: development
-      DKAN_ENV_SWITCH: development
+      NGINX_ERROR_LOG_LEVEL: debug
 
 volumes:
 

@@ -1,5 +1,5 @@
 ---
-version: '3.4'
+version: '2.4'
 
 x-service-base: &service-base
   restart: 'unless-stopped'
@@ -40,16 +40,16 @@ services:
       # PHP_XDEBUG_PROFILER_OUTPUT_DIR: /mnt/files/xdebug/profiler
       # PHP_XDEBUG_TRACE_OUTPUT_DIR: /mnt/files/xdebug/traces
       # PHP_BLACKFIRE: 1
-    depends_on:
-      - dkan-mariadb
 
   dkan-nginx:
     <<: *service-base
     <<: *dkan-assets-common
     image: wodby/drupal-nginx:7-1.13-3.0.2
     environment:
+      # We need to enable NGINX_ALLOW_XML_ENDPOINTS to have the rdf/xml
+      # endpoints working.
+      NGINX_ALLOW_XML_ENDPOINTS: 1
       NGINX_STATIC_CONTENT_OPEN_FILE_CACHE: "off"
-      NGINX_ERROR_LOG_LEVEL: debug
       NGINX_BACKEND_HOST: dkan-php
       NGINX_SERVER_ROOT: /var/www/html/docroot
      # NGINX_DRUPAL_FILE_PROXY_URL: http://example.com

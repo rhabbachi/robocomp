@@ -1,5 +1,5 @@
 ---
-version: '3.4'
+version: '2.4'
 
 x-job-base: &job-base
   restart: 'no'
@@ -7,20 +7,27 @@ x-job-base: &job-base
     - io.rancher.container.start_once=true
     - io.opendatastack.type="job"
 
-x-job-aws-common: &job-aws-common
+x-job-aws-s3-cp-base: &job-aws-s3-cp-base
+  <<: *job-base
   image: xueshanf/awscli
-  command:
+  entrypoint:
     - sh
     - -c
+  command:
     - |
-        aws s3 cp $${ARG_SOURCE} $${ARG_DESTINATION}
+        set -x
+        for source in $$ARG_SOURCE; do
+          aws s3 cp $$source $${ARG_DESTINATION}
+        done
   labels:
-    - io.opendatastack.args.source.description="Source file (from Local filesystem)."
+    - io.opendatastack.job.description="Copy files from or to S3 to or from local filesystem."
+    - io.opendatastack.args.source.description="Source file(s) (from Local filesystem)."
     - io.opendatastack.args.source.required=true
-    - io.opendatastack.args.destination.description="Destination file to be sent to S3."
+    - io.opendatastack.args.destination.description="Destination bucket or files to be sent to S3."
     - io.opendatastack.args.destination.required=true
 
-x-job-git-common: &job-git-common
+x-job-git-clone-base: &job-git-clone-base
+  <<: *job-base
   image: indiehosters/git
   entrypoint:
     - bash
@@ -52,9 +59,19 @@ x-job-dkan-php: &job-dkan-php
 
 services:
 
+  drush: &job-drush
+    extends:
+      file: _main.dkan.compose
+      service: dkan-php
+    working_dir: /var/www/html/docroot
+    entrypoint:
+      - /docker-entrypoint.sh
+      - drush
+    labels:
+      - io.opendatastack.job.description="Run drush commands."
+
   dkan-asset-code-clone:
-    <<: *job-base
-    <<: *job-git-common
+    <<: *job-git-clone-base
     env_file:
       - ./config/env_files/github.env
     user: 82:82
@@ -66,8 +83,7 @@ services:
       - io.opendatastack.stage="build"
 
   dkan-asset-code-pull:
-    <<: *job-base
-    <<: *job-git-common
+    <<: *job-git-clone-base
     working_dir: /tmp/data
     env_file:
       - ./config/env_files/github.env
@@ -81,36 +97,33 @@ services:
       - dkan-asset-code-vlm:/tmp/data:z
 
   dkan-asset-dbsnapshot-download:
-    <<: *job-base
-    <<: *job-aws-common
+    <<: *job-aws-s3-cp-base
     <<: *job-dkan-db-common
     env_file:
       - ./config/env_files/aws.env
     labels:
       - io.opendatastack.stage="build"
 
-  dkan-asset-dbsnapshot-upload:
-    <<: *job-base
-    <<: *job-aws-common
-    <<: *job-dkan-db-common
+  dkan-asset-upload:
+    <<: *job-aws-s3-cp-base
+    <<: *dkan-assets-common
+    working_dir: /var/www/html
     env_file:
       - ./config/env_files/aws.env
     environment:
-      ARG_SOURCE: /tmp/data/dkan/dbsnapshots/dkan-amva.local.sql.gz
-      ARG_DESTINATION: s3://dkan-amva/
-    labels:
-      - io.opendatastack.stage="backup"
+      ARG_SOURCE: "backups/db/latest/*.sql.gz"
+      ARG_DESTINATION: "s3://dkan-medellin/"
 
   dkan-asset-dbsnapshot-import:
     <<: *job-base
     <<: *job-dkan-db-common
-    env_file:
-      - ./config/env_files/dkan-db.env
-    image: wodby/mariadb:10.2-3.0.1
-    user: 100:101
-    command:
+    extends:
+      file: _main.dkan.compose
+      service: dkan-mariadb
+    entrypoint:
       - sh
       - -c
+    command:
       - |
           zcat $${ARG_SOURCE_DBSNAPSHOT} | /usr/bin/mysql -hdkan-mariadb -uroot --password=$${MYSQL_ROOT_PASSWORD} $${MYSQL_DATABASE}
     depends_on:
@@ -120,9 +133,51 @@ services:
       - io.opendatastack.args.source_dbsnapshot.description="Source sql.gz file (from Local filesystem)."
       - io.opendatastack.args.source_dbsnapshot.required=true
 
+  dkan-asset-dbsnapshot-export:
+    <<: *job-drush
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          set -x
+          # Init couple variables.
+          TIMESTAMP=`date -I'seconds'`
+          PROJECT_NAME=$${ARG_BACKUP_PREFIX%%.*}
+          DESTINATION=$${ARG_BACKUP_DESTINATION}
+
+          DB_FILENAME="$$ARG_BACKUP_PREFIX.sql.gz"
+          DB_SANITISED_FILENAME="$$ARG_BACKUP_PREFIX.sanitized.sql.gz"
+          DB_UNPRUNED_FILENAME="$$ARG_BACKUP_PREFIX.unpruned.sql.gz"
+
+          DB_FILENAME_TIMESTAMP="$$ARG_BACKUP_PREFIX.$$TIMESTAMP.sql.gz"
+          DB_SANITISED_FILENAME_TIMESTAMP="$$ARG_BACKUP_PREFIX.$$TIMESTAMP.sanitized.sql.gz"
+          DB_UNPRUNED_FILENAME_TIMESTAMP="$$ARG_BACKUP_PREFIX.$$TIMESTAMP.unpruned.sql.gz"
+
+          # Setup the destination backup directory.
+          rm -rf $$DESTINATION
+          mkdir -p $$DESTINATION
+
+          drush php-eval 'registry_rebuild();'
+
+          echo "Grabbing database dump.."
+          drush sql-dump > $$DESTINATION/unsanitised.sql
+
+          # Compress the database snapshots.
+          cd $$DESTINATION
+          cat unsanitised.sql | gzip -c > $$DB_FILENAME
+          cat unsanitised.sql | gzip -c > $$DB_SANITISED_FILENAME
+          cat unsanitised.sql | gzip -c > $$DB_UNPRUNED_FILENAME
+
+          cp $$DB_FILENAME $$DB_FILENAME_TIMESTAMP
+          cp $$DB_SANITISED_FILENAME $$DB_SANITISED_FILENAME_TIMESTAMP
+          cp $$DB_UNPRUNED_FILENAME $$DB_UNPRUNED_FILENAME_TIMESTAMP
+    environment:
+      ARG_BACKUP_PREFIX: "dkan-medellin.local"
+      ARG_BACKUP_DESTINATION: "../backups/db/latest"
+
   dkan-asset-files-download:
-    <<: *job-base
-    <<: *job-aws-common
+    <<: *job-aws-s3-cp-base
     <<: *job-dkan-files-common
     env_file:
       - ./config/env_files/aws.env
@@ -133,19 +188,36 @@ services:
 
   dkan-asset-files-archive:
     <<: *job-base
-    <<: *job-dkan-files-common
+    <<: *dkan-assets-common
     image: hellyna/tar:latest
+    user: 82:82
+    working_dir: /var/www/html
     entrypoint:
       - sh
       - -c
     command:
       - |
-          tar -cvz -f $${ARG_DEST_TAR} --xform="s,tmp/dkan-asset-files-vlm,," $${ARG_SOURCE_DIR}
+          set -x
+          # Init couple variables.
+          TIMESTAMP=`date -I'seconds'`
+
+          # Setup the destination backup directory.
+          rm -rf $$ARG_DESTINATION_DIR
+          mkdir -p $$ARG_DESTINATION_DIR
+
+          tar -cvz --force-local -f $$ARG_DESTINATION_DIR/$$ARG_BACKUP_PREFIX".files.tar.gz" --xform="s,var/www/dkan-asset-files-vlm,$$ARG_BACKUP_PREFIX.files/files," $$ARG_SOURCE_DIR
+          cp $$ARG_DESTINATION_DIR/$$ARG_BACKUP_PREFIX".files.tar.gz" $$ARG_DESTINATION_DIR/$$ARG_BACKUP_PREFIX"."$$TIMESTAMP".files.tar.gz"
     environment:
-      ARG_SOURCE_DIR: /tmp/dkan-asset-files-vlm/
-      ARG_DEST_TAR: /tmp/dkan-asset-files-snapshots-vlm/dkan-amva.prod.files.tar.gz
+      ARG_SOURCE_DIR: /var/www/dkan-asset-files-vlm/
+      ARG_DESTINATION_DIR: "backups/files/latest"
+      ARG_BACKUP_PREFIX: "dkan-medellin.local"
     labels:
       - io.opendatastack.stage="backup"
+      - io.opendatastack.job.description="Copy files from or to S3 to or from local filesystem."
+      - io.opendatastack.args.source.description="Source file(s) (from Local filesystem)."
+      - io.opendatastack.args.source.required=true
+      - io.opendatastack.args.destination.description="Destination bucket or files to be sent to S3."
+      - io.opendatastack.args.destination.required=true
 
   dkan-asset-files-unpack:
     <<: *job-base
@@ -157,7 +229,7 @@ services:
       - -c
     command:
       - |
-          tar xvzf $${ARG_SOURCE_TAR} --strip 2 -C $${ARG_DEST}
+          tar -xvz --force-local -f $${ARG_SOURCE_TAR} --strip 2 -C $${ARG_DEST}
     environment:
       ARG_DEST: /tmp/dkan-asset-files-vlm/
     labels:
@@ -394,13 +466,13 @@ services:
             exit 0
           fi
           git fetch origin "$${ARG_TAG}:$${ARG_TAG}" 2> /dev/null
-          ARGS=`git rev-parse --verify "$${ARG_TAG}" 2> /dev/null`
-          echo $${ARGS}
-          if [[ -z "$${ARGS}" ]]; then
+          TAG=`git rev-parse --verify "$${ARG_TAG}" 2> /dev/null`
+          echo $${TAG}
+          if [[ -z "$${TAG}" ]]; then
             echo "You need to specify a valid Data Starter release (tag) or branch. Exiting"
             exit 0
           fi
-          git checkout $${ARGS}
+          git checkout $${TAG}
           cd ..
           mv config .config
           rm -rf * .ahoy .ahoy.yml .github .probo.public.yml .probo.yml
@@ -411,9 +483,13 @@ services:
           mv .config config
           rm -rf .dkan_starter
     environment:
-      ARG_TAG: "1.14.5.1"
+      ARG_TAG: "1.15.0.0"
     volumes:
       - dkan-asset-code-vlm:/tmp/data:z
+    labels:
+      - io.opendatastack.job.description="Update data starter to a Tagged release."
+      - io.opendatastack.args.tag.description="Dkan Starter upgrade Tag."
+      - io.opendatastack.args.tag.required=true
 
   dkan-build-custom:
     <<: *job-base
@@ -577,13 +653,49 @@ services:
     volumes:
       - dkan-asset-code-vlm:/tmp/data:z
 
+  dkan-deploy-tag:
+    extends:
+      file: _main.dkan.compose
+      service: dkan-php
+    working_dir: /var/www/html/docroot
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+          /docker-entrypoint.sh
+
+          # Deploy the provided tag.
+          git fetch
+          git checkout $$ARG_TAG
+
+          # Run deployment drush commands.
+          cd sites/default
+
+          # Setup settings.php and files link.
+          chmod u+w .
+          [[ -f "settings.docker.php" ]] || cp -rv settings.docker.demo.php settings.docker.php
+          rm -rf files; ln -sf ../../../../dkan-asset-files-vlm files
+          chmod u-w .
+
+          drush rr --no-cache-clear
+          drush sqlq "TRUNCATE cache;"
+          drush cc all
+
+          drush en custom_config -y
+          drush cc all
+          drush -y fr --force custom_config
+          drush env-switch $$DKAN_ENV_SWITCH --force
+          drush -y updb
+    environment:
+      ARG_TAG: "origin/master"
+    depends_on:
+      - dkan-mariadb
+
   dkan-deploy:
-    # extends: dkan-php
-    <<: *dkan-assets-common
-    image: wodby/drupal-php:5.6-3.3.1
-    env_file:
-      - ./config/env_files/dkan-php.env
-      - ./config/env_files/dkan-db.env
+    extends:
+      file: _main.dkan.compose
+      service: dkan-php
     working_dir: /var/www/html/docroot
     entrypoint:
       - bash
@@ -608,26 +720,13 @@ services:
           drush -y fr --force custom_config
           drush env-switch $$DKAN_ENV_SWITCH --force
           drush -y updb
-    environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
-      PHP_FPM_CLEAR_ENV: "no"
-      # PHP_XDEBUG: 1
-      # PHP_XDEBUG_DEFAULT_ENABLE: 1
-      # PHP_XDEBUG_REMOTE_CONNECT_BACK: 0
-      # PHP_XDEBUG_REMOTE_HOST: "10.254.254.254"
-      # PHP_XDEBUG_PROFILER_OUTPUT_DIR: /mnt/files/xdebug/profiler
-      # PHP_XDEBUG_TRACE_OUTPUT_DIR: /mnt/files/xdebug/traces
-      # PHP_BLACKFIRE: 1
     depends_on:
       - dkan-mariadb
 
   dkan-install:
-    # extends: dkan-php
-    <<: *dkan-assets-common
-    image: wodby/drupal-php:5.6-3.3.1
-    env_file:
-      - ./config/env_files/dkan-php.env
-      - ./config/env_files/dkan-db.env
+    extends:
+      file: _main.dkan.compose
+      service: dkan-php
     working_dir: /var/www/html/docroot
     entrypoint:
       - bash
@@ -647,19 +746,13 @@ services:
           # drush  -y en custom_config
           # drush fr -y  --force custom_config
           # drush cc all
-    environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
-      PHP_FPM_CLEAR_ENV: "no"
     depends_on:
       - dkan-mariadb
 
   dkan-theme-new-from-kit:
-    # extends: dkan-php
-    <<: *dkan-assets-common
-    image: wodby/drupal-php:5.6-3.3.1
-    env_file:
-      - ./config/env_files/dkan-php.env
-      - ./config/env_files/dkan-db.env
+    extends:
+      file: _main.dkan.compose
+      service: dkan-php
     working_dir: /var/www/html/docroot
     entrypoint:
       - bash
@@ -704,8 +797,6 @@ services:
             exit 1;
           fi
     environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
-      PHP_FPM_CLEAR_ENV: "no"
       ARG_THEME_NAME: amva
     depends_on:
       - dkan-mariadb
@@ -717,9 +808,6 @@ services:
     # Extend node image for the theme tools.
     <<: *dkan-assets-common
     image: wodby/node:9.11
-    env_file:
-      - ./config/env_files/dkan-php.env
-      - ./config/env_files/dkan-db.env
     working_dir: /var/www/html/docroot
     user: root
     entrypoint:
@@ -750,21 +838,8 @@ services:
           gulp
           EOF
     environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
-      PHP_FPM_CLEAR_ENV: "no"
       ARG_THEME_PATH: "sites/all/themes/amva"
     labels:
       - io.opendatastack.job.description="Installs dependencies for theme development."
       - io.opendatastack.args.theme_path.description="Path to the Dkan theme to watch (relative to docroot)."
       - io.opendatastack.args.theme_path.required=true
-
-  drush:
-    # extends: dkan-php
-    <<: *dkan-assets-common
-    image: wodby/drupal-php:5.6-3.3.1
-    env_file:
-      - ./config/env_files/dkan-php.env
-      - ./config/env_files/dkan-db.env
-    working_dir: /var/www/html/docroot
-    entrypoint:
-      - drush

@@ -1,11 +1,11 @@
 ---
 project:
-  name: medata
+  name: &project_name myproject
 
 mode: _dev
 
 domains:
-  - dkan.docker
+  - &domain dkan.docker
 
 setup:
   dkan-asset-dbsnapshot-import:
@@ -51,8 +51,15 @@ volumes:
 
 env_files:
   dkan-php:
-    - ENVIRONMENT=production
-    - DKAN_ENV_SWITCH=production
+    # 'local' => 'local',
+    # 'dev' => 'development',
+    # 'test' => 'test',
+    # 'live' => 'production',
+    # 'prod' => 'production',
+    # 'ra' => 'production',
+    - ENVIRONMENT=
+    - DKAN_ENV_SWITCH=
+    - PHP_SENDMAIL_PATH=/usr/sbin/sendmail -t -i -S mailhog:1025
 
   aws:
     - AWS_ACCESS_KEY_ID=
@@ -78,7 +85,7 @@ crontab:
     comment: Run Cron on a dkan_starter site.
     schedule: "@every 3h"
     command: bash -c 'cd /var/www/html/docroot && drush cron'
-    project: opendatastack-medellin
+    project: *project_name
     container: dkan-php
     onstart: false
 
@@ -86,7 +93,7 @@ crontab:
     comment: Run Harvest on a dkan_starter site.
     schedule: "@weekly"
     command: bash -c 'cd /var/www/html/docroot && drush php-eval \registry_rebuild();\ && drush dkan-h'
-    project: opendatastack-medellin
+    project: *project_name
     container: dkan-php
     onstart: false
 
@@ -94,7 +101,7 @@ crontab:
     comment: Update ODSM data.json Cache on a dkan_starter site.
     schedule: "@daily"
     command: bash -c 'cd /var/www/html/docroot && drush odsm-filecache data_json_1_1 --yes && drush data-json-validate --yes'
-    project: opendatastack-medellin
+    project: *project_name
     container: dkan-php
     onstart: false
 
@@ -102,7 +109,7 @@ crontab:
     comment: Update the search index on a dkan_starter site.
     schedule: "@daily"
     command: bash -c 'cd /var/www/html/docroot && drush search-api-index --yes'
-    project: opendatastack-medellin
+    project: *project_name
     container: dkan-php
     onstart: false
 
