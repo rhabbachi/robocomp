@@ -827,14 +827,14 @@ services:
             npm install -g gulp-cli;
           }
 
-          apk --no-cache add shadow python g++
+          apk --no-cache add shadow file python git g++ autoconf
           groupmod -g 82 node && usermod -u 82 -g 82 node
           /docker-entrypoint.sh
 
           sudo -u node bash << EOF
           cd $$ARG_THEME_PATH
 
-          npm install --unsafe-perm && node_modules/bin/bower install -allow-root
+          npm install --unsafe-perm && /usr/local/lib/node_modules/bower/bin/bower install -allow-root
           gulp
           EOF
     environment:
