@@ -112,7 +112,7 @@ services:
       - ./config/env_files/aws.env
     environment:
       ARG_SOURCE: "backups/db/latest/*.sql.gz"
-      ARG_DESTINATION: "s3://dkan-medellin/"
+      ARG_DESTINATION: "s3://dkan-project/"
 
   dkan-asset-dbsnapshot-import:
     <<: *job-base
@@ -140,7 +140,8 @@ services:
       - -c
     command:
       - |
-          set -x
+          /docker-entrypoint.sh
+
           # Init couple variables.
           TIMESTAMP=`date -I'seconds'`
           PROJECT_NAME=$${ARG_BACKUP_PREFIX%%.*}
@@ -161,7 +162,7 @@ services:
           drush php-eval 'registry_rebuild();'
 
           echo "Grabbing database dump.."
-          drush sql-dump > $$DESTINATION/unsanitised.sql
+          drush sql-dump --extra="--max_allowed_packet=512M" > $$DESTINATION/unsanitised.sql
 
           # Compress the database snapshots.
           cd $$DESTINATION
@@ -173,7 +174,7 @@ services:
           cp $$DB_SANITISED_FILENAME $$DB_SANITISED_FILENAME_TIMESTAMP
           cp $$DB_UNPRUNED_FILENAME $$DB_UNPRUNED_FILENAME_TIMESTAMP
     environment:
-      ARG_BACKUP_PREFIX: "dkan-medellin.local"
+      ARG_BACKUP_PREFIX: "dkan-project.local"
       ARG_BACKUP_DESTINATION: "../backups/db/latest"
 
   dkan-asset-files-download:
@@ -210,7 +211,7 @@ services:
     environment:
       ARG_SOURCE_DIR: /var/www/dkan-asset-files-vlm/
       ARG_DESTINATION_DIR: "backups/files/latest"
-      ARG_BACKUP_PREFIX: "dkan-medellin.local"
+      ARG_BACKUP_PREFIX: "dkan-project.local"
     labels:
       - io.opendatastack.stage="backup"
       - io.opendatastack.job.description="Copy files from or to S3 to or from local filesystem."
@@ -743,9 +744,11 @@ services:
           chmod u-w .
 
           drush si dkan --verbose --account-pass=\'admin\' --site-name=\'DKAN\' install_configure_form.update_status_module="array(FALSE,FALSE)" --yes
-          # drush  -y en custom_config
-          # drush fr -y  --force custom_config
-          # drush cc all
+
+          drush en custom_config -y
+          drush cc all
+          drush -y fr --force custom_config
+          drush env-switch $$DKAN_ENV_SWITCH --force
     depends_on:
       - dkan-mariadb
 
