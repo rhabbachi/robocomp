@@ -13,7 +13,7 @@ setup:
       - ARG_SOURCE_DBSNAPSHOT=
   dkan-asset-files-unpack:
     args:
-      - ARG_SOURCE_TAR=/tmp/dkan-asset-files-snapshots-vlm/dkan-medellin.prod.files.tar.gz
+      - ARG_SOURCE_TAR=
   dkan-deploy:
 
 build:
@@ -22,7 +22,7 @@ build:
   dkan-asset-dbsnapshot-download:
     args:
       - ARG_SOURCE=
-      - ARG_DESTINATION=/tmp/dkan-asset-db-snapshots-vlm/dkan-medellin.prod.sql.gz
+      - ARG_DESTINATION=
 
   dkan-asset-files-download:
     args:
@@ -117,7 +117,7 @@ crontab:
     comment: Run Datastore Fast Import Queue on a dkan_starter site.
     schedule: "@every 3h"
     command: bash -c 'cd /var/www/html/docroot && drush queue-run dkan_datastore_fast_import_queue'
-    project: opendatastack-medellin
+    project: *project_name
     container: dkan-php
     onstart: false
 
