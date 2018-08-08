@@ -131,4 +131,5 @@ _local:
             - dkan.docker
       labels:
         - 'traefik.port=80'
-        - 'traefik.frontend.rule=Host:dkan.docker'
+        - "traefik.frontend.rule=HostRegexp:{catchall:.*}"
+        - "traefik.frontend.priority=1"
