@@ -64,6 +64,8 @@ env_files:
   aws:
     - AWS_ACCESS_KEY_ID=
     - AWS_SECRET_ACCESS_KEY=
+    - ARG_HOST=
+    - ARG_HOST_BUCKET=
 
   github:
     - GITHUB_USER=

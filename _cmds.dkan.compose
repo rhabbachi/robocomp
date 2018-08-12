@@ -16,8 +16,14 @@ x-job-aws-s3-cp-base: &job-aws-s3-cp-base
   command:
     - |
         set -x
-        for source in $$ARG_SOURCE; do
-          aws s3 cp $$source $${ARG_DESTINATION}
+        for source in $${ARG_SOURCE}; do
+        # s3cmd --host=\'$$ARG_HOST\' --host-bucket=\'$$ARG_HOST_BUCKET\' put $$source $$ARG_DESTINATION
+        s3cmd \
+        --host="$${ARG_HOST:-s3.amazonaws.com}" \
+        --host-bucket="$${ARG_HOST_BUCKET:-%(bucket)s.s3.amazonaws.com}" \
+        put \
+        $${source} \
+        $${ARG_DESTINATION}
         done
   labels:
     - io.opendatastack.job.description="Copy files from or to S3 to or from local filesystem."
