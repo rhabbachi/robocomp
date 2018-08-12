@@ -776,7 +776,7 @@ services:
               exit 1
           fi
 
-          THEME_DIR="docroot/sites/all/themes/$$ARG_THEME_NAME"
+          THEME_DIR="docroot/sites/all/themes/custom/$$ARG_THEME_NAME"
           if [[ -d "$$THEME_DIR" ]]; then
             echo "Theme $$ARG_THEME_NAME found at $$THEME_DIR. Please remove it first"
             exit 1;
@@ -806,7 +806,7 @@ services:
             exit 1;
           fi
     environment:
-      ARG_THEME_NAME: amva
+      ARG_THEME_NAME:
     depends_on:
       - dkan-mariadb
     labels:
@@ -847,7 +847,7 @@ services:
           gulp
           EOF
     environment:
-      ARG_THEME_PATH: "sites/all/themes/amva"
+      ARG_THEME_PATH:
     labels:
       - io.opendatastack.job.description="Installs dependencies for theme development."
       - io.opendatastack.args.theme_path.description="Path to the Dkan theme to watch (relative to docroot)."
