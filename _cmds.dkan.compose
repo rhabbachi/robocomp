@@ -21,7 +21,7 @@ x-job-aws-s3-cp-base: &job-aws-s3-cp-base
         s3cmd \
         --host="$${ARG_HOST:-s3.amazonaws.com}" \
         --host-bucket="$${ARG_HOST_BUCKET:-%(bucket)s.s3.amazonaws.com}" \
-        put \
+        $${ARG_S3CMD_COMMAND} \
         $${source} \
         $${ARG_DESTINATION}
         done
@@ -107,6 +107,8 @@ services:
     <<: *job-dkan-db-common
     env_file:
       - ./config/env_files/aws.env
+    environment:
+      - ARG_S3CMD_COMMAND=get
     labels:
       - io.opendatastack.stage="build"
 
@@ -119,6 +121,7 @@ services:
     environment:
       ARG_SOURCE: "backups/db/latest/*.sql.gz"
       ARG_DESTINATION: "s3://dkan-project/"
+      ARG_S3CMD_COMMAND: put
 
   dkan-asset-dbsnapshot-import:
     <<: *job-base
@@ -190,6 +193,7 @@ services:
       - ./config/env_files/aws.env
     environment:
       ARG_DESTINATION: /tmp/dkan-asset-files-snapshots-vlm
+      ARG_S3CMD_COMMAND: get
     labels:
       - io.opendatastack.stage="build"
 
