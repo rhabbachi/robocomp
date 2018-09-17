@@ -8,6 +8,7 @@ services:
     command: -c /dev/null --web --docker --logLevel=INFO
     ports:
       - '80:80'
+      - '443:443'
       # - '8080:8080' # Dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -19,9 +20,13 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # - /opt/portainer/data:/data
+    labels:
+      - 'traefik.enable=false'
 
   crontab:
     image: willfarrell/crontab
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./config/crontab/config.json:/opt/crontab/config.json:ro
+    labels:
+      - 'traefik.enable=false'

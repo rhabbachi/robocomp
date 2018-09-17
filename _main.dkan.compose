@@ -23,6 +23,8 @@ services:
     image: wodby/mariadb:10.2-3.0.1
     env_file:
       - ./config/env_files/dkan-db.env
+    labels:
+      - 'traefik.enable=false'
 
   dkan-php:
     <<: *service-base
@@ -40,6 +42,8 @@ services:
       # PHP_XDEBUG_PROFILER_OUTPUT_DIR: /mnt/files/xdebug/profiler
       # PHP_XDEBUG_TRACE_OUTPUT_DIR: /mnt/files/xdebug/traces
       # PHP_BLACKFIRE: 1
+    labels:
+      - 'traefik.enable=false'
 
   dkan-nginx:
     <<: *service-base
