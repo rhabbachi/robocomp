@@ -1,6 +1,9 @@
 ---
 version: '2.4'
 
+x-service-base: &service-base
+  restart: 'no'
+
 services:
 
   mailhog:
@@ -11,8 +14,15 @@ services:
       - 'traefik.frontend.rule=Host:mailhog.dkan.docker'
 
   dkan-nginx:
+    <<: *service-base
     environment:
       NGINX_ERROR_LOG_LEVEL: debug
+
+  dkan-mariadb:
+    <<: *service-base
+
+  dkan-php:
+    <<: *service-base
 
 volumes:
 
