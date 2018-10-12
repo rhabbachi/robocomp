@@ -17,13 +17,28 @@ x-job-aws-s3-cp-base: &job-aws-s3-cp-base
     - |
         set -x
         for source in $${ARG_SOURCE}; do
-        # s3cmd --host=\'$$ARG_HOST\' --host-bucket=\'$$ARG_HOST_BUCKET\' put $$source $$ARG_DESTINATION
-        s3cmd \
-        --host="$${ARG_HOST:-s3.amazonaws.com}" \
-        --host-bucket="$${ARG_HOST_BUCKET:-%(bucket)s.s3.amazonaws.com}" \
-        $${ARG_S3CMD_COMMAND} \
-        $${source} \
-        $${ARG_DESTINATION}
+          OPT_FORCE=""
+
+          if [ -f $${ARG_DESTINATION} ]; then
+            read -p "File already exists. [o:Overwrite/c:Continue/s:Skip]" -n 1 -r
+
+            OPT_FORCE="--skip-existing"
+
+            case "$$REPLY" in
+              o|O ) OPT_FORCE="--force";;
+              c|C ) OPT_FORCE="--continue";;
+              s|S ) OPT_FORCE="--skip-existing";;
+              * ) echo "Default to Skipping";;
+            esac
+          fi
+
+          s3cmd \
+          --host="$${ARG_HOST:-s3.amazonaws.com}" \
+          --host-bucket="$${ARG_HOST_BUCKET:-%(bucket)s.s3.amazonaws.com}" \
+          $${OPT_FORCE} \
+          $${ARG_S3CMD_COMMAND} \
+          $${source} \
+          $${ARG_DESTINATION}
         done
   labels:
     - io.opendatastack.job.description="Copy files from or to S3 to or from local filesystem."
