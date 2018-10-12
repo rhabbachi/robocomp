@@ -1,0 +1,30 @@
+---
+version: '2.4'
+
+services:
+
+  traefik:
+    command:
+      - --logLevel=DEBUG
+      - -c /dev/null
+
+      - --docker
+      - --docker.watch
+      - --docker.exposedbydefault=false
+
+      - --entryPoints=Name:https Address::443 TLS
+      - --entryPoints=Name:http Address::80 Redirect.EntryPoint:https
+      - --defaultentrypoints=http,https
+
+      - --acme
+      - --acme.storage=/acme.json
+      - --acme.email=habbachi.riadh@gmail.com
+      - --acme.entrypoint=https
+      - --acme.onhostrule=true
+      - --acme.httpchallenge
+      - --acme.httpchallenge.entrypoint=http
+      - --acme.domains=dev-godi.sbc4d.com
+    volumes:
+      - './config/traefik/acme.json:/acme.json'
+    ports:
+      - '443:443'
