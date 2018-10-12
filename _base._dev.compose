@@ -4,7 +4,13 @@ version: '2.4'
 services:
 
   traefik:
-    command: -c /dev/null --web --docker --logLevel=DEBUG
+    command:
+      - --logLevel=DEBUG
+      - -c /dev/null
+
+      - --docker
+      - --docker.watch
+      - --docker.exposedbydefault=false
     ports:
       - '80:80'
       - '8080:8080' # Dashboard
