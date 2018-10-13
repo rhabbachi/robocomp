@@ -17,19 +17,23 @@ x-job-aws-s3-cp-base: &job-aws-s3-cp-base
     - |
         set -x
         for source in $${ARG_SOURCE}; do
-          OPT_FORCE=""
+          if [ "get" == $${ARG_S3CMD_COMMAND} ]; then
+            # s3cmd get command have additional option to deal with existing
+            # destination files.
+            OPT_FORCE=""
 
-          if [ -f $${ARG_DESTINATION} ]; then
-            read -p "File already exists. [o:Overwrite/c:Continue/s:Skip]" -n 1 -r
+            if [ -f $${ARG_DESTINATION} ]; then
+              read -p "File already exists. [o:Overwrite/c:Continue/s:Skip]" -n 1 -r
 
-            OPT_FORCE="--skip-existing"
+              OPT_FORCE="--skip-existing"
 
-            case "$$REPLY" in
-              o|O ) OPT_FORCE="--force";;
-              c|C ) OPT_FORCE="--continue";;
-              s|S ) OPT_FORCE="--skip-existing";;
-              * ) echo "Default to Skipping";;
-            esac
+              case "$$REPLY" in
+                o|O ) OPT_FORCE="--force";;
+                c|C ) OPT_FORCE="--continue";;
+                s|S ) OPT_FORCE="--skip-existing";;
+                * ) echo "Default to Skipping";;
+              esac
+            fi
           fi
 
           s3cmd \
