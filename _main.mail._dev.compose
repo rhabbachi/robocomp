@@ -1,0 +1,16 @@
+---
+version: '2.4'
+
+x-service-base: &service-base
+  restart: 'no'
+
+services:
+
+  mail:
+    <<: *service-base
+    image: mailhog/mailhog
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.backend=mailhog'
+      - 'traefik.port=8025'
+      - 'traefik.frontend.rule=Host:mailhog.dkan.docker'

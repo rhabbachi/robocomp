@@ -6,13 +6,6 @@ x-service-base: &service-base
 
 services:
 
-  mailhog:
-    image: mailhog/mailhog
-    labels:
-      - 'traefik.backend=mailhog'
-      - 'traefik.port=8025'
-      - 'traefik.frontend.rule=Host:mailhog.dkan.docker'
-
   dkan-nginx:
     <<: *service-base
     environment:
